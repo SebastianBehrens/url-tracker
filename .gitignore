@@ -1,4 +1,5 @@
 .venv/
 data/tracking.db
-logs/
+logs/*
 config.yml
+!.gitkeep

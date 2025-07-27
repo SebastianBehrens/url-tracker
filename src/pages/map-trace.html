@@ -1,0 +1,198 @@
+<svg id="world-map" style="width: 100%; height: 100%; display: block;"></svg>
+
+<script>
+    // Make the update function globally accessible
+    window.updateMap = updateMap;
+
+    // Get dimensions from the parent container for proper sizing
+    const container = d3.select("#map-container");
+    const width = container.node().getBoundingClientRect().width;
+    const height = container.node().getBoundingClientRect().height;
+
+    const svg = d3.select("#world-map")
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .style("display", "block"); // Add this line
+
+    const projection = d3.geoMercator()
+        .scale(width / 2 / Math.PI)
+        .translate([width / 2, height / 2]);
+
+    const initialScale = projection.scale();
+    const initialTranslate = projection.translate();
+    const pathGenerator = d3.geoPath().projection(projection);
+    const g = svg.append("g");
+
+    const lineGenerator = d3.line()
+        .x(d => projection([d.lon, d.lat])[0])
+        .y(d => projection([d.lon, d.lat])[1]);
+
+    const tooltip = container.append("div") 
+        .attr("class", "tooltip")
+        .style("position", "absolute")
+        .style("z-index", "10")
+        .style("visibility", "hidden")
+        .style("background", "hsl(var(--b1))")
+        .style("border", "1px solid hsl(var(--b3))")
+        .style("border-radius", "0.5rem")
+        .style("padding", "1rem")
+        .style("color", "hsl(var(--bc))")
+        .style("box-shadow", "0 4px 6px -1px hsl(var(--b2) / 0.3)");
+
+
+    d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(worldData => {
+        // Initial render of map
+        renderMap(worldData);
+
+        // Initialize the trace path
+        g.append("path")
+            .attr("class", "trace-path")
+            .style("fill", "none")
+            .style("stroke", "hsl(var(--p))")
+            .style("stroke-width", 2)
+            .style("opacity", 0.9);
+
+        // Make renderMap globally accessible for theme changes
+        window.renderMapWithData = () => renderMap(worldData);
+    });
+
+    function renderMap(worldData) {
+        // Clear existing paths to prevent duplicates
+        g.selectAll("path.country").remove();
+        
+        g.selectAll("path.country")
+            .data(worldData.features)
+            .enter()
+            .append("path")
+            .attr("class", "country")
+            .attr("d", pathGenerator)
+            .attr("fill", "hsl(var(--s) / 0.1)")
+            .style("stroke", "hsl(var(--p))")
+            .style("stroke-width", 0.5)
+            .style("opacity", 0.8);
+        
+        // Update trace path colors
+        g.select(".trace-path")
+            .style("stroke", "hsl(var(--p))")
+            .style("opacity", 0.9);
+    }
+
+    function updateMap(locations) {
+        const transformedLocations = locations.map(loc => ({
+            detected_at: loc[0], lat: loc[1], lon: loc[2], country: loc[3],
+            city: loc[4], isp: loc[5], org: loc[6], as_number: loc[7]
+        }))
+        .filter(d => d.lat != null && d.lon != null)
+        .sort((a, b) => new Date(a.detected_at) - new Date(b.detected_at));
+
+        const countryPaths = g.selectAll("path.country");
+
+        // --- MODIFIED ZOOM/PAN LOGIC ---
+        if (transformedLocations.length === 0) {
+            // Case 0: No points. Reset to global view.
+            projection.scale(initialScale).translate(initialTranslate);
+        } else if (transformedLocations.length === 1) {
+            // Case 1: A single point. Center on it with a fixed zoom.
+            const point = transformedLocations[0];
+            projection
+                .scale(1000) // A reasonable zoom level for a city/region
+                .translate([width / 2, height / 2])  // Reset translate to center
+                .center([point.lon, point.lat]);
+        } else {
+            // Case 2+: Multiple points. Auto-fit to the bounding box.
+            const geoJsonData = {
+                type: "FeatureCollection",
+                features: transformedLocations.map(d => ({
+                    type: "Feature",
+                    geometry: { type: "Point", coordinates: [d.lon, d.lat] }
+                }))
+            };
+            const padding = 50;
+            projection.fitExtent([[padding, padding], [width - padding, height - padding]], geoJsonData);
+        }
+
+        const zoomTransition = d3.transition().duration(750);
+        countryPaths.transition(zoomTransition).attr("d", pathGenerator);
+        
+        updateTraceAndPoints(transformedLocations);
+    }
+    
+    function updateTraceAndPoints(locations) {
+        const tracePath = g.select(".trace-path");
+        g.selectAll("circle").remove();
+        tracePath.attr("d", ""); // Clear path by default
+
+        if (locations.length === 0) {
+            return;
+        }
+
+        const durationPerSegment = 700;
+        const pointDelays = d3.range(locations.length).map(i => i * durationPerSegment);
+
+        g.selectAll("circle")
+            .data(locations)
+            .enter()
+            .append("circle")
+            .attr("cx", d => projection([d.lon, d.lat])[0])
+            .attr("cy", d => projection([d.lon, d.lat])[1])
+            .attr("r", 0)
+            .style("fill", "hsl(var(--p))")
+            .style("stroke", "hsl(var(--s))")
+            .style("stroke-width", 1.5)
+            .style("opacity", 0.9)
+            .on("mouseover", (event, d) => tooltip.style("visibility", "visible").html(`<strong>${d.city || 'N/A'}, ${d.country || 'N/A'}</strong><br/>ISP: ${d.isp}<br/>Detected: ${new Date(d.detected_at).toLocaleString()}`))
+            .on("mousemove", (event) => tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"))
+            .on("mouseout", () => tooltip.style("visibility", "hidden"))
+            .transition()
+            .delay((d, i) => pointDelays[i])
+            .duration(250)
+            .attr("r", 5);
+
+        if (locations.length < 2) {
+            return;
+        }
+
+        const totalAnimationDuration = (locations.length - 1) * durationPerSegment;
+        tracePath.attr("d", lineGenerator(locations));
+        const totalLength = tracePath.node().getTotalLength();
+
+        const cumulativeLengths = [0];
+        for (let i = 1; i < locations.length; i++) {
+            const p0 = projection([locations[i - 1].lon, locations[i - 1].lat]);
+            const p1 = projection([locations[i].lon, locations[i].lat]);
+            const segmentLength = Math.sqrt(Math.pow(p1[0] - p0[0], 2) + Math.pow(p1[1] - p0[1], 2));
+            cumulativeLengths.push(cumulativeLengths[i - 1] + segmentLength);
+        }
+
+        function customEase(t) {
+            if (t <= 0) return 0;
+            if (t >= 1) return 1;
+
+            const timePoints = d3.range(locations.length).map(i => i / (locations.length - 1));
+            const segmentIndex = d3.bisect(timePoints, t) - 1;
+            
+            const timeInSegment = (t - timePoints[segmentIndex]) / (timePoints[segmentIndex + 1] - timePoints[segmentIndex]);
+            
+            const lengthStart = cumulativeLengths[segmentIndex] / totalLength;
+            const lengthEnd = cumulativeLengths[segmentIndex + 1] / totalLength;
+
+            return lengthStart + (lengthEnd - lengthStart) * timeInSegment;
+        }
+
+        tracePath
+            .attr("stroke-dasharray", totalLength + " " + totalLength)
+            .attr("stroke-dashoffset", totalLength)
+            .transition()
+            .duration(totalAnimationDuration)
+            .ease(customEase)
+            .attr("stroke-dashoffset", 0);
+
+        // Update tooltip with theme colors
+        tooltip.style("background", "hsl(var(--b1) / 0.95)")
+               .style("border", "1px solid hsl(var(--s))")
+               .style("color", "hsl(var(--bc))")
+               .style("box-shadow", "0 4px 6px -1px hsl(var(--s) / 0.3)");
+    }
+</script>

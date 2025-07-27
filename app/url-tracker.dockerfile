@@ -27,6 +27,7 @@ RUN mkdir -p /app/src
 
 # Copy application code
 COPY src/main.py src/main.py
+COPY src/security.py src/security.py
 COPY src/pages/ src/pages/
 
 # Expose port 8000

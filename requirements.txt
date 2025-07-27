@@ -6,3 +6,4 @@ starlette==0.47.2
 uvicorn==0.35.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
+watchfiles==1.1.0

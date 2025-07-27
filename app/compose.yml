@@ -4,9 +4,9 @@ services:
       context: .
       dockerfile: url-tracker.dockerfile
     volumes:
-      - ./config.yml:/app/config.yml:ro  # Mount config file as read-only
-      - ./tracking.db:/app/tracking.db    # Mount database file
-      - ./logs:/app/logs                  # Mount logs directory
+      - ./config.yml:/app/config.yml:ro 
+      - ./tracking.db:/app/tracking.db
+      - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]

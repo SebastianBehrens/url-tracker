@@ -4,6 +4,9 @@
     // Make the update function globally accessible
     window.updateMap = updateMap;
 
+    // Get API key from parent window
+    const API_KEY = window.parent.API_KEY;
+
     // Get dimensions from the parent container for proper sizing
     const container = d3.select("#map-container");
     const width = container.node().getBoundingClientRect().width;

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
+from starlette.middleware.sessions import SessionMiddleware
+from security import verify_frontend_request, init_session, SECRET_KEY
 
 def load_config(config_file='config.yml'):
     """Load configuration from YAML file."""
@@ -97,6 +99,16 @@ async def lifespan(app: FastAPI):
 
 # Update FastAPI app to use lifespan
 app = FastAPI(lifespan=lifespan)
+
+# Add session middleware
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    session_cookie="session",
+    max_age=3600,  # 1 hour
+    same_site="strict",
+    https_only=True
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -189,6 +201,8 @@ async def track_urls_job():
 @app.get("/")
 async def home(request: Request):
     """Render the home page with latest locations."""
+    # Initialize session for frontend
+    init_session(request)
     urls = config['urls']
     return templates.TemplateResponse(
         "index.html",
@@ -201,6 +215,9 @@ async def home(request: Request):
 @app.get("/map-trace")
 async def map_trace(request: Request, url: str = None):
     """Render the map trace template."""
+    # Verify the request is from our frontend
+    await verify_frontend_request(request)
+    
     return templates.TemplateResponse(
         "map-trace.html",
         {
@@ -210,8 +227,11 @@ async def map_trace(request: Request, url: str = None):
     )
 
 @app.get("/api/locations/{url:path}")
-async def get_url_locations(url: str):
+async def get_url_locations(request: Request, url: str):
     """API endpoint to get locations for a specific URL."""
+    # Verify the request is from our frontend
+    await verify_frontend_request(request)
+    
     locations = get_locations(url)
     return locations
 

@@ -159,7 +159,6 @@ async def track_urls_job():
 
         logging.debug(f"Processing {domain}")
         location = await locate_domain(domain)
-        print(location)
 
         if not location:
             logging.warning(f"Could not get location for {domain}")

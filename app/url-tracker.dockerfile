@@ -17,12 +17,20 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Switch to non-root user
+USER 1002:1002
+
+# RUN mkdir -p /app/logs
+# RUN mkdir -p /app/data
+
+RUN mkdir -p /app/src
+
 # Copy application code
-COPY src/main.py .
-COPY src/pages/ pages/
+COPY src/main.py src/main.py
+COPY src/pages/ src/pages/
 
 # Expose port 8000
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

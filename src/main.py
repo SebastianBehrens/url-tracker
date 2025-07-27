@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 from starlette.middleware.sessions import SessionMiddleware
-from src.security import verify_frontend_request, init_session, SECRET_KEY
+from security import verify_frontend_request, init_session, SECRET_KEY
 
 def load_config(config_file='config.yml'):
     """Load configuration from YAML file."""
@@ -80,7 +80,6 @@ async def lifespan(app: FastAPI):
     conn.commit()
     conn.close()
     
-    # Start the scheduler
     scheduler.add_job(
         track_urls_job,
         trigger=IntervalTrigger(**config['server']['tracking_interval']),
@@ -88,7 +87,8 @@ async def lifespan(app: FastAPI):
         name='url-tracker-job',
         replace_existing=False,
         max_instances=1,
-        coalesce=True
+        coalesce=True,
+        next_run_time=datetime.now() # run immediately (on startup)
     )
     scheduler.start()
     logging.debug("Scheduler started")

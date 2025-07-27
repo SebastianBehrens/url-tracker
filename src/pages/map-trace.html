@@ -17,7 +17,7 @@
         .attr("height", "100%")
         .attr("viewBox", `0 0 ${width} ${height}`)
         .attr("preserveAspectRatio", "xMidYMid meet")
-        .style("display", "block"); // Add this line
+        .style("display", "block");
 
     const projection = d3.geoMercator()
         .scale(width / 2 / Math.PI)
@@ -32,7 +32,7 @@
         .x(d => projection([d.lon, d.lat])[0])
         .y(d => projection([d.lon, d.lat])[1]);
 
-    const tooltip = container.append("div") 
+    const tooltip = container.append("div")
         .attr("class", "tooltip")
         .style("position", "absolute")
         .style("z-index", "10")
@@ -48,23 +48,13 @@
     d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(worldData => {
         // Initial render of map
         renderMap(worldData);
-
-        // Initialize the trace path
-        g.append("path")
-            .attr("class", "trace-path")
-            .style("fill", "none")
-            .style("stroke", "hsl(var(--p))")
-            .style("stroke-width", 2)
-            .style("opacity", 0.9);
-
         // Make renderMap globally accessible for theme changes
         window.renderMapWithData = () => renderMap(worldData);
     });
 
     function renderMap(worldData) {
-        // Clear existing paths to prevent duplicates
         g.selectAll("path.country").remove();
-        
+
         g.selectAll("path.country")
             .data(worldData.features)
             .enter()
@@ -75,11 +65,6 @@
             .style("stroke", "hsl(var(--p))")
             .style("stroke-width", 0.5)
             .style("opacity", 0.8);
-        
-        // Update trace path colors
-        g.select(".trace-path")
-            .style("stroke", "hsl(var(--p))")
-            .style("opacity", 0.9);
     }
 
     function updateMap(locations) {
@@ -92,19 +77,15 @@
 
         const countryPaths = g.selectAll("path.country");
 
-        // --- MODIFIED ZOOM/PAN LOGIC ---
         if (transformedLocations.length === 0) {
-            // Case 0: No points. Reset to global view.
             projection.scale(initialScale).translate(initialTranslate);
         } else if (transformedLocations.length === 1) {
-            // Case 1: A single point. Center on it with a fixed zoom.
             const point = transformedLocations[0];
             projection
-                .scale(1000) // A reasonable zoom level for a city/region
-                .translate([width / 2, height / 2])  // Reset translate to center
+                .scale(1000)
+                .translate([width / 2, height / 2])
                 .center([point.lon, point.lat]);
         } else {
-            // Case 2+: Multiple points. Auto-fit to the bounding box.
             const geoJsonData = {
                 type: "FeatureCollection",
                 features: transformedLocations.map(d => ({
@@ -118,21 +99,19 @@
 
         const zoomTransition = d3.transition().duration(750);
         countryPaths.transition(zoomTransition).attr("d", pathGenerator);
-        
+
         updateTraceAndPoints(transformedLocations);
     }
-    
+
     function updateTraceAndPoints(locations) {
-        const tracePath = g.select(".trace-path");
         g.selectAll("circle").remove();
-        tracePath.attr("d", ""); // Clear path by default
+        g.selectAll("path.trace-segment").remove();
 
         if (locations.length === 0) {
             return;
         }
 
         const durationPerSegment = 700;
-        const pointDelays = d3.range(locations.length).map(i => i * durationPerSegment);
 
         g.selectAll("circle")
             .data(locations)
@@ -149,7 +128,7 @@
             .on("mousemove", (event) => tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"))
             .on("mouseout", () => tooltip.style("visibility", "hidden"))
             .transition()
-            .delay((d, i) => pointDelays[i])
+            .delay((d, i) => i * durationPerSegment)
             .duration(250)
             .attr("r", 5);
 
@@ -157,42 +136,36 @@
             return;
         }
 
-        const totalAnimationDuration = (locations.length - 1) * durationPerSegment;
-        tracePath.attr("d", lineGenerator(locations));
-        const totalLength = tracePath.node().getTotalLength();
+        for (let i = 0; i < locations.length - 1; i++) {
+            const segmentData = [locations[i], locations[i + 1]];
 
-        const cumulativeLengths = [0];
-        for (let i = 1; i < locations.length; i++) {
-            const p0 = projection([locations[i - 1].lon, locations[i - 1].lat]);
-            const p1 = projection([locations[i].lon, locations[i].lat]);
-            const segmentLength = Math.sqrt(Math.pow(p1[0] - p0[0], 2) + Math.pow(p1[1] - p0[1], 2));
-            cumulativeLengths.push(cumulativeLengths[i - 1] + segmentLength);
+            const segmentPath = g.append("path")
+                .attr("class", "trace-segment")
+                .attr("d", lineGenerator(segmentData))
+                .style("fill", "none")
+                .style("stroke", "#fe0075") // Active trace color
+                .style("stroke-width", 2)
+                .style("opacity", 0.9);
+
+            const length = segmentPath.node().getTotalLength();
+
+            segmentPath
+                .attr("stroke-dasharray", length + " " + length)
+                .attr("stroke-dashoffset", length)
+                .transition()
+                    .delay(i * durationPerSegment)
+                    .duration(durationPerSegment)
+                    .ease(d3.easeLinear)
+                    .attr("stroke-dashoffset", 0)
+                    // When the transition ends, change the color to black
+                    .on("end", function() {
+                        d3.select(this)
+                          .transition()
+                          .duration(500) // Optional: fade to black smoothly
+                          .style("stroke", "black");
+                    });
         }
 
-        function customEase(t) {
-            if (t <= 0) return 0;
-            if (t >= 1) return 1;
-
-            const timePoints = d3.range(locations.length).map(i => i / (locations.length - 1));
-            const segmentIndex = d3.bisect(timePoints, t) - 1;
-            
-            const timeInSegment = (t - timePoints[segmentIndex]) / (timePoints[segmentIndex + 1] - timePoints[segmentIndex]);
-            
-            const lengthStart = cumulativeLengths[segmentIndex] / totalLength;
-            const lengthEnd = cumulativeLengths[segmentIndex + 1] / totalLength;
-
-            return lengthStart + (lengthEnd - lengthStart) * timeInSegment;
-        }
-
-        tracePath
-            .attr("stroke-dasharray", totalLength + " " + totalLength)
-            .attr("stroke-dashoffset", totalLength)
-            .transition()
-            .duration(totalAnimationDuration)
-            .ease(customEase)
-            .attr("stroke-dashoffset", 0);
-
-        // Update tooltip with theme colors
         tooltip.style("background", "hsl(var(--b1) / 0.95)")
                .style("border", "1px solid hsl(var(--s))")
                .style("color", "hsl(var(--bc))")

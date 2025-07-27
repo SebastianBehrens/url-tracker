@@ -1,2 +1,3 @@
 .venv/
 data/tracking.db
+logs/

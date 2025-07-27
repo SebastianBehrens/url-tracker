@@ -34,5 +34,4 @@ COPY src/pages/ src/pages/
 # Expose port 8000
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-include", "*.yml"]
+CMD WATCHFILES_FORCE_POLLING=1 python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-include config.yml --use-colors

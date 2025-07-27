@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 from starlette.middleware.sessions import SessionMiddleware
-from security import verify_frontend_request, init_session, SECRET_KEY
+from src.security import verify_frontend_request, init_session, SECRET_KEY
 
 def load_config(config_file='config.yml'):
     """Load configuration from YAML file."""

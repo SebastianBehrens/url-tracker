@@ -29,6 +29,10 @@ log_dir = Path(config['logging']['dir'])
 log_dir.mkdir(parents=False, exist_ok=True)
 log_file = log_dir / config['logging']['file']
 
+# Add this: Ensure data directory exists
+data_dir = Path(config['database']['path']).parent
+data_dir.mkdir(parents=False, exist_ok=True)
+
 logging.basicConfig(
     level=getattr(logging, config['logging'].get('level', 'INFO').upper()),
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -155,6 +159,7 @@ async def track_urls_job():
 
         logging.debug(f"Processing {domain}")
         location = await locate_domain(domain)
+        print(location)
 
         if not location:
             logging.warning(f"Could not get location for {domain}")

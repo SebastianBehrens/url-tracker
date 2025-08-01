@@ -109,7 +109,7 @@
     // Replace the calculateLabelPosition function with this improved version
     function calculateLabelPosition(point, index, locations, width, height) {
         const margin = 50;
-        const labelDistance = 30;
+        const labelDistance = 45;  // Increased from 30 to 45 for more space
         
         // Get projected points for previous and next locations
         const prevPoint = index > 0 ? projection([locations[index - 1].lon, locations[index - 1].lat]) : null;
@@ -172,8 +172,8 @@
         return {
             x: point[0] + Math.cos(angle) * labelDistance,
             y: point[1] + Math.sin(angle) * labelDistance,
-            textX: point[0] + Math.cos(angle) * (labelDistance + 5),
-            textY: point[1] + Math.sin(angle) * (labelDistance + 5),
+            textX: point[0] + Math.cos(angle) * (labelDistance + 10),  // Increased from 5 to 10
+            textY: point[1] + Math.sin(angle) * (labelDistance + 10),  // Increased from 5 to 10
             angle: angle
         };
     }

@@ -37,12 +37,15 @@
         .style("position", "absolute")
         .style("z-index", "10")
         .style("visibility", "hidden")
-        .style("background", "hsl(var(--b1))")
-        .style("border", "1px solid hsl(var(--b3))")
+        .style("background", "#121212")  // Changed to dark background
+        .style("border", "1px solid hsl(var(--p))")
         .style("border-radius", "0.5rem")
         .style("padding", "1rem")
-        .style("color", "hsl(var(--bc))")
-        .style("box-shadow", "0 4px 6px -1px hsl(var(--b2) / 0.3)");
+        .style("color", "#fe0075")  // Changed to match the trace color
+        .style("box-shadow", "0 4px 6px -1px hsl(var(--n) / 0.3)")
+        .style("top", "1rem")  // Position from top
+        .style("right", "1rem")  // Position from right
+        .style("max-width", "300px");  // Prevent tooltip from being too wide
 
 
     d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(worldData => {
@@ -103,9 +106,82 @@
         updateTraceAndPoints(transformedLocations);
     }
 
+    // Replace the calculateLabelPosition function with this improved version
+    function calculateLabelPosition(point, index, locations, width, height) {
+        const margin = 50;
+        const labelDistance = 30;
+        
+        // Get projected points for previous and next locations
+        const prevPoint = index > 0 ? projection([locations[index - 1].lon, locations[index - 1].lat]) : null;
+        const nextPoint = index < locations.length - 1 ? projection([locations[index + 1].lon, locations[index + 1].lat]) : null;
+        
+        // Calculate path direction if we have either prev or next point
+        let pathAngle = 0;
+        if (prevPoint && nextPoint) {
+            // We're in the middle of the path
+            pathAngle = Math.atan2(nextPoint[1] - prevPoint[1], nextPoint[0] - prevPoint[0]);
+        } else if (prevPoint) {
+            // We're at the end of the path
+            pathAngle = Math.atan2(point[1] - prevPoint[1], point[0] - prevPoint[0]);
+        } else if (nextPoint) {
+            // We're at the start of the path
+            pathAngle = Math.atan2(nextPoint[1] - point[1], nextPoint[0] - point[0]);
+        }
+
+        // Place label perpendicular to the path direction
+        // Choose the side that's facing away from the center of the map
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const fromCenter = {
+            x: point[0] - centerX,
+            y: point[1] - centerY
+        };
+
+        // Calculate perpendicular angles (both directions)
+        const perp1 = pathAngle + Math.PI / 2;
+        const perp2 = pathAngle - Math.PI / 2;
+
+        // Test which perpendicular direction points more away from center
+        const test1 = {
+            x: Math.cos(perp1),
+            y: Math.sin(perp1)
+        };
+        const test2 = {
+            x: Math.cos(perp2),
+            y: Math.sin(perp2)
+        };
+
+        // Dot product with vector from center to determine which direction points more outward
+        const dot1 = test1.x * fromCenter.x + test1.y * fromCenter.y;
+        const dot2 = test2.x * fromCenter.x + test2.y * fromCenter.y;
+
+        // Choose the angle that points more away from center
+        let angle = dot1 > dot2 ? perp1 : perp2;
+
+        // Edge case handling
+        if (point[1] < margin) {  // Near top edge
+            angle = Math.PI / 2;  // Force downward
+        } else if (point[1] > height - margin) {  // Near bottom edge
+            angle = -Math.PI / 2;  // Force upward
+        }
+
+        // Add slight variation based on index to prevent exact overlaps
+        const variation = (index % 2 === 0 ? 1 : -1) * Math.PI / 12;  // ±15 degrees
+        angle += variation;
+
+        return {
+            x: point[0] + Math.cos(angle) * labelDistance,
+            y: point[1] + Math.sin(angle) * labelDistance,
+            textX: point[0] + Math.cos(angle) * (labelDistance + 5),
+            textY: point[1] + Math.sin(angle) * (labelDistance + 5),
+            angle: angle
+        };
+    }
+
     function updateTraceAndPoints(locations) {
         g.selectAll("circle").remove();
         g.selectAll("path.trace-segment").remove();
+        g.selectAll(".point-label").remove();  // Add this line to clean up old labels
 
         if (locations.length === 0) {
             return;
@@ -113,6 +189,7 @@
 
         const durationPerSegment = 700;
 
+        // Add points
         g.selectAll("circle")
             .data(locations)
             .enter()
@@ -124,14 +201,73 @@
             .style("stroke", "hsl(var(--s))")
             .style("stroke-width", 1.5)
             .style("opacity", 0.9)
-            .on("mouseover", (event, d) => tooltip.style("visibility", "visible").html(`<strong>${d.city || 'N/A'}, ${d.country || 'N/A'}</strong><br/>ISP: ${d.isp}<br/>Detected: ${new Date(d.detected_at).toLocaleString()}`))
-            .on("mousemove", (event) => tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"))
+            .on("mouseover", (event, d) => tooltip.style("visibility", "visible")
+                .html(`
+                    <strong>${d.city || 'N/A'}, ${d.country || 'N/A'}</strong>
+                    <div style="display: grid; grid-template-columns: max-content max-content; gap: 0.5rem 0; margin-top: 0.5rem;">
+                        <div style="text-align: right;">ISP:</div>
+                        <div style="text-align: left;">${d.isp}</div>
+                        <div style="text-align: right;">Detected:</div>
+                        <div style="text-align: left;">${new Date(d.detected_at).toLocaleString()}</div>
+                    </div>
+                `))
             .on("mouseout", () => tooltip.style("visibility", "hidden"))
             .transition()
             .delay((d, i) => i * durationPerSegment)
             .duration(250)
             .attr("r", 5);
 
+        // Add labels with connecting lines
+        const labelGroup = g.selectAll(".point-label")
+            .data(locations)
+            .enter()
+            .append("g")
+            .attr("class", "point-label")
+            .style("opacity", 0);
+
+        // Add connecting lines
+        labelGroup.append("line")
+            .style("stroke", "hsl(var(--p))")
+            .style("stroke-width", 1)
+            .attr("x1", d => projection([d.lon, d.lat])[0])
+            .attr("y1", d => projection([d.lon, d.lat])[1])
+            .attr("x2", (d, i) => {
+                const point = projection([d.lon, d.lat]);
+                const pos = calculateLabelPosition(point, i, locations, width, height);
+                return pos.x;
+            })
+            .attr("y2", (d, i) => {
+                const point = projection([d.lon, d.lat]);
+                const pos = calculateLabelPosition(point, i, locations, width, height);
+                return pos.y;
+            });
+
+        // Add number labels
+        labelGroup.append("text")
+            .attr("x", (d, i) => {
+                const point = projection([d.lon, d.lat]);
+                const pos = calculateLabelPosition(point, i, locations, width, height);
+                return pos.textX;
+            })
+            .attr("y", (d, i) => {
+                const point = projection([d.lon, d.lat]);
+                const pos = calculateLabelPosition(point, i, locations, width, height);
+                return pos.textY;
+            })
+            .style("fill", "hsl(var(--p))")
+            .style("font-size", "12px")
+            .style("font-weight", "bold")
+            .style("text-anchor", "middle")
+            .style("dominant-baseline", "middle")
+            .text((d, i) => i + 1);
+
+        // Animate labels
+        labelGroup.transition()
+            .delay((d, i) => i * durationPerSegment)
+            .duration(250)
+            .style("opacity", 1);
+
+        // Continue with existing trace path code
         if (locations.length < 2) {
             return;
         }
@@ -166,9 +302,9 @@
                     });
         }
 
-        tooltip.style("background", "hsl(var(--b1) / 0.95)")
-               .style("border", "1px solid hsl(var(--s))")
-               .style("color", "hsl(var(--bc))")
-               .style("box-shadow", "0 4px 6px -1px hsl(var(--s) / 0.3)");
+        tooltip.style("background", "#121212")  // Changed to dark background
+               .style("border", "1px solid hsl(var(--p))")
+               .style("color", "#fe0075")  // Changed to match the trace color
+               .style("box-shadow", "0 4px 6px -1px hsl(var(--n) / 0.3)");
     }
 </script>

@@ -19,6 +19,28 @@
         .attr("preserveAspectRatio", "xMidYMid meet")
         .style("display", "block");
 
+    // Add Material Icons font
+    const linkElem = document.createElement('link');
+    linkElem.rel = 'stylesheet';
+    linkElem.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0';
+    document.head.appendChild(linkElem);
+
+    // Add sequence container with updated styling
+    const sequenceContainer = container.append("div")
+        .attr("class", "sequence-container")
+        .style("position", "absolute")
+        .style("top", "1rem")
+        .style("left", "1rem")
+        .style("max-height", "150px")
+        .style("overflow-y", "auto")
+        .style("background", "rgba(18, 18, 18, 0.8)")
+        .style("padding", "0.5rem")
+        .style("border-radius", "0.5rem")
+        .style("display", "flex")
+        .style("flex-wrap", "wrap")
+        .style("gap", "0.5rem")
+        .style("max-width", "calc(50% - 2rem)");
+
     const projection = d3.geoMercator()
         .scale(width / 2 / Math.PI)
         .translate([width / 2, height / 2]);
@@ -181,23 +203,57 @@
     function updateTraceAndPoints(locations) {
         g.selectAll("circle").remove();
         g.selectAll("path.trace-segment").remove();
-        g.selectAll(".point-label").remove();  // Add this line to clean up old labels
-
+        g.selectAll(".point-label").remove();
+        
+        // Clear and update sequence container
+        sequenceContainer.selectAll("*").remove();
+        
         if (locations.length === 0) {
             return;
         }
 
         const durationPerSegment = 700;
 
-        // Add points
-        g.selectAll("circle")
+        // Create sequence elements
+        const sequenceItems = sequenceContainer.selectAll(".sequence-item")
+            .data(locations)
+            .enter()
+            .append("div")
+            .attr("class", "sequence-item")
+            .style("display", "inline-flex")
+            .style("align-items", "center")
+            .style("color", "hsl(var(--p))")
+            .style("cursor", "pointer");
+
+        sequenceItems
+            .append("span")
+            .text((d, i) => i + 1)
+            .style("padding", "0.15rem 0.3rem")  // Smaller padding
+            .style("border", "1px solid #fe0075")
+            .style("border-radius", "0.25rem")
+            .style("color", "#fe0075")
+            .style("font-size", "0.875rem")  // Slightly smaller text
+            .style("transition", "all 0.2s");
+
+        // Update arrow between items with Material Icon
+        sequenceItems
+            .filter((d, i) => i < locations.length - 1)
+            .append("span")
+            .attr("class", "material-symbols-rounded")
+            .style("font-size", "16px")  // Adjust icon size
+            .style("color", "#fe0075")
+            .style("margin", "0 0.1rem")  // Smaller margins
+            .text("arrow_right");
+
+        // Add points to the map
+        const points = g.selectAll("circle")
             .data(locations)
             .enter()
             .append("circle")
             .attr("cx", d => projection([d.lon, d.lat])[0])
             .attr("cy", d => projection([d.lon, d.lat])[1])
             .attr("r", 0)
-            .style("fill", "hsl(var(--p))")
+            .style("fill", "black")  // Changed initial color to black
             .style("stroke", "hsl(var(--s))")
             .style("stroke-width", 1.5)
             .style("opacity", 0.9)
@@ -211,61 +267,62 @@
                         <div style="text-align: left;">${new Date(d.detected_at).toLocaleString()}</div>
                     </div>
                 `))
-            .on("mouseout", () => tooltip.style("visibility", "hidden"))
-            .transition()
+            .on("mouseout", () => tooltip.style("visibility", "hidden"));
+
+        // Update hover interactions
+        sequenceItems
+            .on("mouseover", function(event, d) {
+                const index = locations.indexOf(d);
+                // Highlight corresponding point and move it to front
+                const hoveredPoint = points.filter((p, i) => i === index);
+                hoveredPoint.each(function() {
+                    this.parentNode.appendChild(this);  // Move to end of parent (top of z-index)
+                })
+                .transition()
+                .duration(200)
+                .attr("r", 8)
+                .style("fill", "#fe0075");
+                
+                // Highlight sequence item
+                d3.select(this).select("span")
+                    .style("background", "#fe0075")
+                    .style("color", "#121212");
+
+                // Show tooltip with location details
+                tooltip.style("visibility", "visible")
+                    .html(`
+                        <strong>${d.city || 'N/A'}, ${d.country || 'N/A'}</strong>
+                        <div style="display: grid; grid-template-columns: max-content max-content; gap: 0.5rem 0; margin-top: 0.5rem;">
+                            <div style="text-align: right;">ISP:</div>
+                            <div style="text-align: left;">${d.isp}</div>
+                            <div style="text-align: right;">Detected:</div>
+                            <div style="text-align: left;">${new Date(d.detected_at).toLocaleString()}</div>
+                        </div>
+                    `);
+            })
+            .on("mouseout", function(event, d) {
+                const index = locations.indexOf(d);
+                // Reset point to black
+                points.filter((p, i) => i === index)
+                    .transition()
+                    .duration(200)
+                    .attr("r", 5)
+                    .style("fill", "black");  // Reset to black to match the final trace color
+                
+                // Reset sequence item
+                d3.select(this).select("span")
+                    .style("background", "none")
+                    .style("color", "#fe0075");
+
+                // Hide tooltip
+                tooltip.style("visibility", "hidden");
+            });
+
+        // Animate points appearance
+        points.transition()
             .delay((d, i) => i * durationPerSegment)
             .duration(250)
             .attr("r", 5);
-
-        // Add labels with connecting lines
-        const labelGroup = g.selectAll(".point-label")
-            .data(locations)
-            .enter()
-            .append("g")
-            .attr("class", "point-label")
-            .style("opacity", 0);
-
-        // Add connecting lines
-        labelGroup.append("line")
-            .style("stroke", "hsl(var(--p))")
-            .style("stroke-width", 1)
-            .attr("x1", d => projection([d.lon, d.lat])[0])
-            .attr("y1", d => projection([d.lon, d.lat])[1])
-            .attr("x2", (d, i) => {
-                const point = projection([d.lon, d.lat]);
-                const pos = calculateLabelPosition(point, i, locations, width, height);
-                return pos.x;
-            })
-            .attr("y2", (d, i) => {
-                const point = projection([d.lon, d.lat]);
-                const pos = calculateLabelPosition(point, i, locations, width, height);
-                return pos.y;
-            });
-
-        // Add number labels
-        labelGroup.append("text")
-            .attr("x", (d, i) => {
-                const point = projection([d.lon, d.lat]);
-                const pos = calculateLabelPosition(point, i, locations, width, height);
-                return pos.textX;
-            })
-            .attr("y", (d, i) => {
-                const point = projection([d.lon, d.lat]);
-                const pos = calculateLabelPosition(point, i, locations, width, height);
-                return pos.textY;
-            })
-            .style("fill", "hsl(var(--p))")
-            .style("font-size", "12px")
-            .style("font-weight", "bold")
-            .style("text-anchor", "middle")
-            .style("dominant-baseline", "middle")
-            .text((d, i) => i + 1);
-
-        // Animate labels
-        labelGroup.transition()
-            .delay((d, i) => i * durationPerSegment)
-            .duration(250)
-            .style("opacity", 1);
 
         // Continue with existing trace path code
         if (locations.length < 2) {
